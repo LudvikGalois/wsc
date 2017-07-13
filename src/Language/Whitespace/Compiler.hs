@@ -3,11 +3,12 @@
 -- is due to label errors.
 module Language.Whitespace.Compiler where
 
+import Data.Word
 import Language.Whitespace
 import qualified Language.Greyspace as G
 import qualified Language.Greyspace.Compiler as GC
 import LLVM.AST
 
 -- | Compile the program to a LLVM Module
-compile :: Program -> Either LabelError Module
-compile prog = (GC.compile "whitepsace" Nothing Nothing . G.toGreyspace) <$> greyspacePreProcess prog
+compile :: String -> Maybe Word64 -> Maybe Word64 -> Program -> Either LabelError Module
+compile f ss hs prog = (GC.compile f ss hs . G.toGreyspace) <$> greyspacePreProcess prog

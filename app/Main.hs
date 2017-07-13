@@ -1,9 +1,9 @@
 module Main where
 
-import Language.Greyspace
-import Language.Greyspace.Compiler
 import Language.Whitespace
 import Language.Whitespace.Parser
+import Language.Greyspace
+import Language.Greyspace.Compiler
 import Options.Applicative
 import Data.Monoid
 import Text.Trifecta.Parser (parseFromFile)
@@ -59,18 +59,18 @@ main = execWSC =<< execParser opts
                     <> header "wsc - a whitespace compiler")
 
 execWSC :: WSCOptions -> IO ()
-execWSC Compile{source = f, output = o} = do
+execWSC Compile{source = f, output = o, stackSize = ss, heapSize = hs} = do
   res <- parseFromFile parseProgram f
   case res of
     Nothing -> exitWith (ExitFailure 1)
     Just prog -> case greyspacePreProcess prog of
       Left err -> hPrint stderr err >> exitWith (ExitFailure 1)
       Right prog' -> M.withContext $ \c -> do
-        M.withModuleFromAST c (compile f Nothing Nothing (toGreyspace prog')) $ \m -> do
+        M.withModuleFromAST c (compile f ss hs (toGreyspace prog')) $ \m -> do
           M.withPassManager (M.defaultCuratedPassSetSpec {M.optLevel = Just 3, M.simplifyLibCalls = Just True}) $ \p -> do
             M.runPassManager p m
             M.withHostTargetMachine $ \h -> M.writeObjectToFile h (M.File (o ++ ".o")) m
-        runCompiler o
+        runLinker o
         return ()
 execWSC (HumanReadable f) = do
   res <- parseFromFile parseProgram f
@@ -78,12 +78,12 @@ execWSC (HumanReadable f) = do
     Nothing -> exitWith (ExitFailure 1)
     Just prog -> putStrLn (ppWhite prog)
 
-runCompiler outputName = do
+runLinker outputName = do
   (Just inHandle, _, _, p) <- createProcess $ prog {std_in = CreatePipe, std_out = Inherit, std_err = Inherit}
   hPutStrLn inHandle rts
   waitForProcess p
   
-  where prog = shell $ "cc -O3 " ++ outputName ++ ".o -o " ++ outputName ++ " -x c -"
+  where prog = shell $ "cc -w -O3 " ++ outputName ++ ".o -o " ++ outputName ++ " -x c -"
 
 -- Since we use a C-compiler so we can use libc, we might as well include a
 -- small runtime in C instead of directly implementing them in LLVM
@@ -92,4 +92,4 @@ rts = unlines
   ["#include<stdio.h>"
   ,"#include<stdlib.h>"
   ,"void putnum(long int x){printf(\"%ld\",x);}"
-  ,"long int getnum(){long int x;scanf(\"%d\",&x);return x;}"]
+  ,"long int getnum(){long int x;scanf(\"%ld\",&x);return x;}"]
