@@ -21,7 +21,8 @@ data WSCOptions = Compile { source :: FilePath, output :: FilePath
                           , stackSize :: Maybe Word64, heapSize :: Maybe Word64}
   | HumanReadable FilePath
 
-makeCompile x = Compile {source = x, output = "a.out", stackSize = Nothing, heapSize = Nothing}
+makeCompile x = Compile { source = x, output = "a.out"
+                        , stackSize = Nothing, heapSize = Nothing}
 
 setOut :: WSCOptions -> FilePath -> WSCOptions
 setOut x@Compile{} f = x {output = f}
@@ -40,17 +41,31 @@ optionsParser :: Parser WSCOptions
 optionsParser = setHeapSize <$>
   (setStackSize <$>
     (setOut <$>
-      (flag makeCompile HumanReadable (long "hr" <> help "No compile, print human-readable source")
-       <*> argument str (metavar "FILE")) <*> parseOutput) <*> parseStack) <*> parseHeap
+      (flag makeCompile HumanReadable
+       (long "hr" <> help "No compile, print human-readable source")
+       <*> argument str (metavar "FILE")) <*> parseOutput) <*> parseStack)
+  <*> parseHeap
 
 parseOutput :: Parser String
-parseOutput = strOption (long "output" <> short 'o' <> metavar "OUTPUT" <> value "a.out" <> help "Output file")
+parseOutput = strOption $ long "output"
+                       <> short 'o'
+                       <> metavar "OUTPUT"
+                       <> value "a.out"
+                       <> help "Output file"
 
 parseStack :: Parser (Maybe Integer)
-parseStack = option auto (long "stack" <> short 's' <> metavar "STACK_SIZE" <> value Nothing <> help "Stack size")
+parseStack = option auto $ long "stack"
+                        <> short 's'
+                        <> metavar "STACK_SIZE"
+                        <> value Nothing
+                        <> help "Stack size"
 
 parseHeap :: Parser (Maybe Integer)
-parseHeap = option auto (long "heap" <> short 'm' <> metavar "HEAP_SIZE" <> value Nothing <> help "Heap size")
+parseHeap = option auto $ long "heap"
+                       <> short 'm'
+                       <> metavar "HEAP_SIZE"
+                       <> value Nothing
+                       <> help "Heap size"
 
 main :: IO ()
 main = execWSC =<< execParser opts
@@ -67,11 +82,15 @@ execWSC Compile{source = f, output = o, stackSize = ss, heapSize = hs} = do
       Left err -> hPrint stderr err >> exitWith (ExitFailure 1)
       Right prog' -> M.withContext $ \c -> do
         M.withModuleFromAST c (compile f ss hs (toGreyspace prog')) $ \m -> do
-          M.withPassManager (M.defaultCuratedPassSetSpec {M.optLevel = Just 3, M.simplifyLibCalls = Just True}) $ \p -> do
-            M.runPassManager p m
-            M.withHostTargetMachine $ \h -> M.writeObjectToFile h (M.File (o ++ ".o")) m
-        runLinker o
-        return ()
+          M.withPassManager (M.defaultCuratedPassSetSpec
+                             { M.optLevel = Just 3
+                             , M.simplifyLibCalls = Just True})
+            $ \p -> do
+              M.runPassManager p m
+              M.withHostTargetMachine
+                $ \h -> M.writeObjectToFile h (M.File (o ++ ".o")) m
+              runLinker o
+              return ()
 execWSC (HumanReadable f) = do
   res <- parseFromFile parseProgram f
   case res of
@@ -79,14 +98,22 @@ execWSC (HumanReadable f) = do
     Just prog -> putStrLn (ppWhite prog)
 
 runLinker outputName = do
-  (Just inHandle, _, _, p) <- createProcess $ prog {std_in = CreatePipe, std_out = Inherit, std_err = Inherit}
+  (Just inHandle, _, _, p) <- createProcess $ preparedProg
   hPutStrLn inHandle rts
   waitForProcess p
-  
-  where prog = shell $ "cc -w -O3 " ++ outputName ++ ".o -o " ++ outputName ++ " -x c -"
+  where prog = shell $ concat [ "cc -w -O3 ", outputName
+                              , ".o -o ", outputName, " -x c -"
+                              ]
+        preparedProg = prog { std_in = CreatePipe
+                            , std_out = Inherit
+                            , std_err = Inherit}
 
 -- Since we use a C-compiler so we can use libc, we might as well include a
--- small runtime in C instead of directly implementing them in LLVM
+-- small runtime in C instead of directly implementing them in LLVM.
+-- This will probably be added to in later version to allow file IO
+-- by overriding putchar and getchar such that things larger than a byte
+-- are instruction to the rts and change which file is being pointed at
+-- for normal putchar, getchar, putnum and getnum.
 rts :: String
 rts = unlines
   ["#include<stdio.h>"

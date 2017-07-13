@@ -13,6 +13,6 @@ negative heap addresses. In the future we
 might just move our heap pointer to the middle
 of the allocated heap to make this work, but I'm not sure
 how much whitespace code in the wild uses negative
-heap addresses. We might add int size as a an argument
+heap addresses. We might add int size as an argument
 which whilst not as good as arbitrary size ints, is
 probably sufficient to get most things working
